@@ -34,6 +34,7 @@ namespace valid_framework {
         virtual void reset(uint64_t seed) = 0;
         virtual Operation<Key, Value> next() = 0;
         virtual void reconfigure(const GeneratorConfig&) { }
+        virtual std::vector<std::pair<std::string, std::string>> meta() const = 0;
         virtual ~AbstractOperationGenerator() = default;
     }; // class AbstractOperationGenerator
 
@@ -43,16 +44,11 @@ namespace valid_framework {
     public:
         explicit BaseOperationGenerator(GeneratorConfig cfg, 
                                         AbstractKeyGenerator<Key, Value>& key_gen,
-                                        std::size_t by_count_max = 10000, 
                                         uint64_t seed = std::random_device{}())
             : gen_(seed) 
             , key_gen_(key_gen)
             , weights_(cfg.weights)
-            , by_count_max_(by_count_max)
         { 
-            if(by_count_max_ <= 0) {
-                throw std::invalid_argument("by_count_max should be positive");
-            }
             build();
         }
 
@@ -76,10 +72,14 @@ namespace valid_framework {
                     Key key2 = key_gen_.next_key();
                     Value value = key_gen_.next_value();
 
-                    std::size_t pos = random_pos() + 1;
-                    return CustomOp<Key, Value>{ profile.id, key1, key2, value, pos };
+                    std::size_t size_val = random_size_val();
+                    return CustomOp<Key, Value>{ profile.id, key1, key2, value, size_val };
                 }   
             }
+        }
+
+        std::vector<std::pair<std::string, std::string>> meta() const override {
+            return weights_meta(weights_);
         }
 
     private:
@@ -101,6 +101,7 @@ namespace valid_framework {
             for(const double w : w_arr) {
                 sum += w;
             }
+
             if(std::fabs(sum - 100.0) > EPS) {
                 throw std::invalid_argument("Sum of operation weights must be 100");
             }
@@ -108,15 +109,14 @@ namespace valid_framework {
             op_distr_ = std::discrete_distribution<int>(w_arr.begin(), w_arr.end());
         }
 
-        std::size_t random_pos() {
-            std::uniform_int_distribution<std::size_t> dice(1, by_count_max_);
+        std::size_t random_size_val() {
+            std::uniform_int_distribution<std::size_t> dice(0, std::numeric_limits<std::size_t>::max());
             return dice(gen_);
         }
         
         std::mt19937_64 gen_;
         AbstractKeyGenerator<Key,Value>& key_gen_;
         OpWeights weights_;
-        std::size_t by_count_max_;
 
         std::discrete_distribution<int> op_distr_;
     }; // class BaseOperationGenerator
@@ -128,19 +128,13 @@ namespace valid_framework {
         explicit SmartOperationGenerator(
                 GeneratorConfig cfg,
                 AbstractKeyGenerator<Key, Value>& key_gen,
-                std::size_t by_count_max = 10000, 
                 uint64_t seed = std::random_device{}())
-            : key_gen_(key_gen)
+            : gen_(seed)
+            , key_gen_(key_gen)
             , weights_(cfg.weights)
-            , by_count_max_(by_count_max)
-            , gen_(seed)
             , hit_distr_(0.0, 1.0)
         {
             hits_ = (cfg.hits.has_value() ? *cfg.hits : HitFrequency{});
-            
-            if(by_count_max_ <= 0) {
-                throw std::invalid_argument("by_count_max should be positive");
-            }
             build();
         }
 
@@ -190,8 +184,8 @@ namespace valid_framework {
                     Key key2 = gen_key_smart(is_hit2);
                     Value value = key_gen_.next_value();
 
-                    std::size_t pos = (is_hit3 ? random_index(existing_keys_.size()) : random_pos()) + 1;
-                    return CustomOp<Key, Value>{ profile.id, key1, key2, value, pos };
+                    std::size_t size_val = (is_hit3 ? random_index(existing_keys_.size()) : random_size_val());
+                    return CustomOp<Key, Value>{ profile.id, key1, key2, value, size_val };
                 }
             }
         }
@@ -209,6 +203,16 @@ namespace valid_framework {
             }
 
             build();
+        }
+
+        std::vector<std::pair<std::string, std::string>> meta() const override {
+            auto res = weights_meta(weights_);
+
+            res.push_back({ "hit_get",    std::to_string(hits_.get) });
+            res.push_back({ "hit_insert", std::to_string(hits_.insert) });
+            res.push_back({ "hit_erase",  std::to_string(hits_.erase) });
+
+            return res;
         }
 
     private:
@@ -246,8 +250,8 @@ namespace valid_framework {
             return dice(gen_);
         }
 
-        std::size_t random_pos() {
-            std::uniform_int_distribution<std::size_t> dice(0, by_count_max_);
+        std::size_t random_size_val() {
+            std::uniform_int_distribution<std::size_t> dice(0, std::numeric_limits<std::size_t>::max());
             return dice(gen_);
         }
 
@@ -265,7 +269,6 @@ namespace valid_framework {
         OpWeights weights_;
         HitFrequency hits_;
         
-        std::size_t by_count_max_;
         std::vector<Key> existing_keys_;
 
         std::discrete_distribution<int> op_distr_;
