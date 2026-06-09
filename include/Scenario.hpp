@@ -16,23 +16,18 @@ namespace valid_framework {
 
         std::size_t ops_count{0};
         std::unique_ptr<AbstractOperationGenerator<Key, Value>> op_gen;
-        OpWeights weights;
 
         std::vector<std::pair<std::string, std::string>> meta() const {
             std::vector<std::pair<std::string, std::string>> res = {
-                { "ops_count",      std::to_string(ops_count) },
-                { "w_insert",       std::to_string(weights.insert) },
-                { "w_get",          std::to_string(weights.get) },
-                { "w_erase",        std::to_string(weights.erase) },
+                { "ops_count", std::to_string(ops_count) },
             };
 
-            for(const auto& profile : weights.custom) {
-                res.push_back({ "w_custom" + std::to_string(profile.id), std::to_string(profile.weight)});
-            }
+            auto gen_meta = op_gen->meta();
+            res.insert(res.begin(), gen_meta.begin(), gen_meta.end());
+
             return res;
         }
     };
-
     
     template<typename Key, typename Value>
     using PhaseConfig = ScenarioConfig<Key, Value>;
