@@ -35,7 +35,7 @@ namespace valid_framework {
         static std::optional<bool> insert(Container&, Key, Value) { return std::nullopt; }
         static std::optional<bool> erase(Container&, Key) { return std::nullopt; }
         static OperationResult<Key, Value> custom(Container&, uint32_t, Key, Key, Value, std::size_t) { return BoolResult{std::nullopt}; }
-        static std::size_t get_memory() { return 0; }
+        static std::size_t get_memory(Container&) { return 0; }
     };
 
 } // namespace valid_framework
