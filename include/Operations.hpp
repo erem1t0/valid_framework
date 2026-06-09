@@ -4,6 +4,9 @@
 #include <variant>
 #include <optional>
 #include <vector>
+#include <string>
+#include <utility>
+#include <type_traits>
 
 namespace valid_framework {
     
@@ -20,6 +23,20 @@ namespace valid_framework {
         std::vector<CustomOpProfile> custom{};
     };
 
+    inline std::vector<std::pair<std::string, std::string>> weights_meta(const OpWeights& weights) {
+        std::vector<std::pair<std::string, std::string>> res = {
+            { "w_insert", std::to_string(weights.insert) },
+            { "w_get",    std::to_string(weights.get) },
+            { "w_erase",  std::to_string(weights.erase) },
+        };
+
+        for (const auto& profile : weights.custom) {
+            res.push_back({ "w_custom" + std::to_string(profile.id), std::to_string(profile.weight) });
+        }
+
+        return res;
+    }
+
     template<typename Key, typename Value>
     struct InsertOp { Key key; Value value; };
 
@@ -35,7 +52,7 @@ namespace valid_framework {
         Key key1;
         Key key2;
         Value value;
-        std::size_t pos;
+        std::size_t size_val;
     };
 
     template<typename Key, typename Value>
@@ -68,7 +85,7 @@ namespace valid_framework {
                                          BoolResult, CountResult>;
 
     template<typename Key, typename Value>
-    const char* op_to_string(const Operation<Key, Value>& op) {
+    constexpr char* op_to_string(const Operation<Key, Value>& op) {
         return std::visit([](auto&& x) {
             using T = std::decay_t<decltype(x)>;
 
