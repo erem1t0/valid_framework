@@ -7,6 +7,8 @@
 #include "Operations.hpp"
 #include "Runner.hpp"
 #include "Scenario.hpp"
+#include "OperationApplier.hpp"
+#include "Trace.hpp"
 
 /*
     add_library(valid_framework INTERFACE)
