@@ -8,10 +8,12 @@
 #include <stdexcept>
 #include <functional>
 #include <utility>
+
 #include "Scenario.hpp"
 #include "Operations.hpp"
 #include "ContainerWrapper.hpp"
 #include "Logger.hpp"
+#include "OperationApplier.hpp"
 
 namespace valid_framework {
 
@@ -209,8 +211,8 @@ namespace valid_framework {
 
             Operation<Key, Value> op;
             while(scenario_.next(op)) {
-                auto test_cont_res = apply_op<TestWrapper>(test_cont, op);
-                auto valid_cont_res = apply_op<ValidWrapper>(valid_cont, op);
+                auto test_cont_res = apply_op<TestWrapper, TestContainer, Key, Value>(test_cont, op);
+                auto valid_cont_res = apply_op<ValidWrapper, ValidContainer, Key, Value>(valid_cont, op);
                 
                 ++report.completed_ops;
                 test_logger_.add_count(1);
@@ -265,7 +267,7 @@ namespace valid_framework {
 
                     test_logger_.resume();
                     for(const auto& curr_op : ops) {
-                        apply_op<TestWrapper>(test_cont, curr_op);
+                        apply_op<TestWrapper, TestContainer, Key, Value>(test_cont, curr_op);
                     }
                     test_logger_.add_count(ops.size());
                     test_logger_.pause(TestWrapper::get_memory(test_cont));
@@ -294,7 +296,7 @@ namespace valid_framework {
 
                     valid_logger_.resume();
                     for(const auto& curr_op : ops) {
-                        apply_op<ValidWrapper>(valid_cont, curr_op);
+                        apply_op<ValidWrapper, ValidContainer, Key, Value>(valid_cont, curr_op);
                     }
                     valid_logger_.add_count(ops.size());
                     valid_logger_.pause(ValidWrapper::get_memory(valid_cont));
@@ -341,7 +343,7 @@ namespace valid_framework {
 
                     test_logger_.resume();
                     for(const auto& curr_op : ops) {
-                        results.push_back(apply_op<TestWrapper>(test_cont, curr_op));
+                        results.push_back(apply_op<TestWrapper, TestContainer, Key, Value>(test_cont, curr_op));
                     }
                     test_logger_.add_count(ops.size());
                     test_logger_.pause(TestWrapper::get_memory(test_cont));
@@ -376,7 +378,7 @@ namespace valid_framework {
 
                     valid_logger_.resume();
                     for(const auto& curr_op : ops) {
-                        results.push_back(apply_op<ValidWrapper>(valid_cont, curr_op));
+                        results.push_back(apply_op<ValidWrapper, ValidContainer, Key, Value>(valid_cont, curr_op));
                     }
                     valid_logger_.add_count(ops.size());
                     valid_logger_.pause(ValidWrapper::get_memory(valid_cont));
@@ -405,26 +407,6 @@ namespace valid_framework {
             valid_logger_.finish();
             test_logger_.write();
             valid_logger_.write();
-        }
-
-        template<typename Wrapper,typename Container>
-        static OperationResult<Key, Value> apply_op(Container& container, const Operation<Key, Value>& op) {
-            return std::visit(
-                [&](const auto& x) -> OperationResult<Key, Value> {
-                    using T = std::decay_t<decltype(x)>;
-
-                    if constexpr(std::is_same_v<T, InsertOp<Key, Value>>) {
-                        return BoolResult{Wrapper::insert(container,x.key, x.value)};
-                    } else if constexpr(std::is_same_v<T, GetOp<Key>>) {
-                        return ValueResult<Value>{Wrapper::get(container, x.key)};
-                    } else if constexpr(std::is_same_v<T, EraseOp<Key>>) {
-                        return BoolResult{Wrapper::erase(container, x.key)};
-                    } else if constexpr(std::is_same_v<T, CustomOp<Key, Value>>) {
-                        return Wrapper::custom(container, x.id, x.key1, x.key2, x.value, x.pos);
-                    } else {
-                        static_assert(sizeof(T) == 0, "Unknown operation type");
-                    }
-                }, op);
         }
 
         AbstractScenario<Key, Value>& scenario_;
@@ -510,7 +492,7 @@ namespace valid_framework {
             logger_.start(cfg_.chunk_count);
 
             while(scenario_.next(op)) {
-                apply_op(cont, op);
+                apply_op<Wrapper, Container, Key, Value>(cont, op);
                 ++report.completed_ops;
                 logger_.add_count(1);
             }
@@ -546,7 +528,7 @@ namespace valid_framework {
 
                 logger_.resume();
                 for(const auto& curr_op : ops) {
-                    apply_op(cont, curr_op);
+                    apply_op<Wrapper, Container, Key, Value>(cont, curr_op);
                 }
                 logger_.add_count(ops.size());
                 logger_.pause(Wrapper::get_memory(cont));
@@ -589,7 +571,7 @@ namespace valid_framework {
 
                 logger_.resume();
                 for(const auto& curr_op : ops) {
-                    results.push_back(apply_op(cont, curr_op));
+                    results.push_back(apply_op<Wrapper, Container, Key, Value>(cont, curr_op));
                 }
                 logger_.add_count(ops.size());
                 logger_.pause(Wrapper::get_memory(cont));
@@ -606,25 +588,6 @@ namespace valid_framework {
             logger_.finish();
             logger_.write();
             return report;
-        }
-
-        static OperationResult<Key, Value> apply_op(Container& container, const Operation<Key, Value>& op) {
-            return std::visit(
-                [&](const auto& x) -> OperationResult<Key, Value> {
-                    using T = std::decay_t<decltype(x)>;
-
-                    if constexpr(std::is_same_v<T, InsertOp<Key, Value>>) {
-                        return BoolResult{Wrapper::insert(container,x.key, x.value)};
-                    } else if constexpr(std::is_same_v<T, GetOp<Key>>) {
-                        return ValueResult<Value>{Wrapper::get(container, x.key)};
-                    } else if constexpr(std::is_same_v<T, EraseOp<Key>>) {
-                        return BoolResult{Wrapper::erase(container, x.key)};
-                    } else if constexpr(std::is_same_v<T, CustomOp<Key, Value>>) {
-                        return Wrapper::custom(container, x.id, x.key1, x.key2, x.value, x.pos);
-                    } else {
-                        static_assert(sizeof(T) == 0, "Unknown operation type");
-                    }
-                }, op);
         }
 
         void start_meta(const char* type, const char* container_name) {
