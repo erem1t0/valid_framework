@@ -8,12 +8,15 @@
 #include <stdexcept>
 #include <functional>
 #include <utility>
+#include <fstream>
+#include <filesystem>
 
 #include "Scenario.hpp"
 #include "Operations.hpp"
 #include "ContainerWrapper.hpp"
 #include "Logger.hpp"
 #include "OperationApplier.hpp"
+#include "Trace.hpp"
 
 namespace valid_framework {
 
@@ -39,9 +42,11 @@ namespace valid_framework {
         RunnerMode mode{RunnerMode::Validate};
         std::size_t chunk_size{1000000};
         std::size_t chunk_count{1024}; // for reserve if know
-        
+
         std::string valid_name{"valid"};
         std::string test_name{"test"};
+
+        TraceDumpConfig trace_cfg;
     };
 
     template<typename Key, typename Value>
@@ -165,6 +170,15 @@ namespace valid_framework {
             if(cfg_.chunk_size == 0) {
                 throw std::invalid_argument("chunk_size must be positive");
             } 
+
+            if(cfg_.trace_cfg.enabled && !cfg_.stop_on_error) {
+                throw std::invalid_argument("trace requires stop_on_error = true");
+            }
+
+            if(cfg_.trace_cfg.enabled && !(cfg_.trace_cfg.dump_full || cfg_.trace_cfg.dump_ops)) {
+                throw std::invalid_argument(
+                    "trace enabled but politics are off. Turn at least 1 of them (ops, full) or disable trace");
+            }
         }
 
         RunnerReport<Key, Value> run() {
@@ -209,6 +223,39 @@ namespace valid_framework {
             valid_logger_.start(cfg_.chunk_count);
             test_logger_.start(cfg_.chunk_count);
 
+            std::ofstream ops_fout;
+            std::ofstream full_fout;
+
+            const bool trace_enabled = cfg_.trace_cfg.enabled;
+            const bool trace_ops_enabled = trace_enabled && cfg_.trace_cfg.dump_ops;
+            const bool trace_full_enabled = trace_enabled && cfg_.trace_cfg.dump_full;
+
+            std::string ops_tmp_filename;
+            std::string full_tmp_filename;
+
+            if(trace_ops_enabled) {
+                ops_tmp_filename = make_tmp_trace_filename("ops");
+                ops_fout.open(ops_tmp_filename);
+                
+                if(!ops_fout.is_open()) {
+                    throw std::runtime_error("Cannot open ops trace file: " + ops_tmp_filename);
+                }
+
+                write_header<Key, Value>(ops_fout, cfg_.seed, 0, scenario_);
+            }
+
+            if(trace_full_enabled) {
+                full_tmp_filename = make_tmp_trace_filename("ops");
+                full_fout.open(full_tmp_filename);
+                
+                if(!full_fout.is_open()) {
+                    throw std::runtime_error("Cannot open ops trace file: " + full_tmp_filename);
+                }
+
+                write_header<Key, Value>(full_fout, cfg_.seed, 0, scenario_);
+            }
+
+
             Operation<Key, Value> op;
             while(scenario_.next(op)) {
                 auto test_cont_res = apply_op<TestWrapper, TestContainer, Key, Value>(test_cont, op);
@@ -218,12 +265,50 @@ namespace valid_framework {
                 test_logger_.add_count(1);
                 valid_logger_.add_count(1);
 
+                TraceOp<Key, Value> trace_op = to_trace_op<Key, Value>(report.completed_ops, op);
+
+                if(trace_ops_enabled) {
+                    write_trace_op<Key, Value>(ops_fout, trace_op);
+                }
+
+                if(trace_full_enabled) {
+                    TraceRecord<Key, Value> record;
+                    record.op = trace_op;
+                    record.expected = valid_cont_res;
+
+                    write_trace_record<Key, Value>(full_fout, record);
+                }
+
                 if(test_cont_res != valid_cont_res) {
                     ++report.failed_ops;
                     
-                    const std::string msg = "Mismatch at op: "
+                    std::string msg = "Mismatch at op: "
                         + std::to_string(report.completed_ops)
                         + ", type: " + op_to_string(op);
+
+                    if(trace_enabled) {
+                        if(ops_fout.is_open()) {
+                            ops_fout.flush();
+                            ops_fout.close();
+                        }
+
+                        if(full_fout.is_open()) {
+                            full_fout.flush();
+                            full_fout.close();
+                        }
+
+                        if(trace_ops_enabled) {
+                            const std::string ops_filename = make_trace_filename(report.completed_ops, "ops");
+                            std::filesystem::rename(ops_tmp_filename, ops_filename);
+                            msg += ", ops_trace: " + ops_filename;
+                        }
+
+                        if(trace_full_enabled) {
+                            const std::string full_filename = make_trace_filename(report.completed_ops, "full");
+                            std::filesystem::rename(full_tmp_filename, full_filename);
+                            msg += ", full_trace: " + full_filename;
+                        }
+                    }
 
                     test_logger_.add_error(report.completed_ops, msg);
 
@@ -233,6 +318,25 @@ namespace valid_framework {
                     }
                 }
             }
+
+            if(ops_fout.is_open()) {
+                ops_fout.close();
+            }
+
+            if(full_fout.is_open()) {
+                full_fout.close();
+            }
+
+            if(trace_enabled && report.failed_ops == 0) {
+                if(trace_ops_enabled && !ops_tmp_filename.empty()) {
+                    std::filesystem::remove(ops_tmp_filename);
+                }
+
+                if(trace_full_enabled && !full_tmp_filename.empty()) {
+                    std::filesystem::remove(full_tmp_filename);
+                }
+            }
+
             finish_and_write();
 
             return report;
@@ -407,6 +511,16 @@ namespace valid_framework {
             valid_logger_.finish();
             test_logger_.write();
             valid_logger_.write();
+        }
+
+        std::string make_trace_filename(std::size_t op_index, const char* type) const {
+            return cfg_.trace_cfg.filename_prefix + "_seed_" + std::to_string(cfg_.seed) 
+                    + "_op_" + std::to_string(op_index) + "_" + type + ".log";
+        }
+
+        std::string make_tmp_trace_filename(const char* type) const {
+            return cfg_.trace_cfg.filename_prefix + "_seed_" + std::to_string(cfg_.seed) 
+                     + "_" + type + "_tmp.log";
         }
 
         AbstractScenario<Key, Value>& scenario_;
