@@ -152,26 +152,27 @@ namespace valid_framework {
             }
         }
 
-        template<typename Key, typename Value>
-        void write_header(std::ostream& out, uint64_t seed, std::size_t max_ops, 
-                          const AbstractScenario<Key, Value>& scenario) {
-            
-            out << "# seed " << seed << '\n';
+    } // namespace detail
 
-            if(max_ops == 0) {
-                out << "# max ops all\n";
-            } else {
-                out << "# max ops " << max_ops << '\n';
-            }
+    template<typename Key, typename Value>
+    void write_header(std::ostream& out, uint64_t seed, std::size_t max_ops, 
+                        const AbstractScenario<Key, Value>& scenario) {
+        
+        out << "# seed " << seed << '\n';
 
-            out << "\n";
-
-            out << "# scenario:\n";
-            write_text(out, scenario.to_string());
-            out << "\n";
+        if(max_ops == 0) {
+            out << "# max_ops all\n";
+        } else {
+            out << "# max_ops " << max_ops << '\n';
         }
 
-    } // namespace detail
+        out << "\n";
+
+        out << "# scenario:\n";
+        write_text(out, scenario.to_string());
+        out << "\n";
+    }
+
 
     template<typename Key, typename Value>
     std::size_t dump_trace(AbstractScenario<Key, Value>& scenario, uint64_t seed, std::size_t max_ops,
@@ -183,7 +184,7 @@ namespace valid_framework {
             throw std::runtime_error("Cannot open trace file: " + filename);
         }
 
-        detail::write_header<Key, Value>(fout, seed, max_ops, scenario);
+        write_header<Key, Value>(fout, seed, max_ops, scenario);
         scenario.reset(seed);
 
         Operation<Key, Value> op;
@@ -543,7 +544,7 @@ namespace valid_framework {
             throw std::runtime_error("Cannot open trace record file: " + filename);
         }
 
-        detail::write_header<Key, Value>(fout, seed, max_ops, scenario);
+        write_header<Key, Value>(fout, seed, max_ops, scenario);
         scenario.reset();
 
         Container cont = cont_build();
@@ -565,5 +566,13 @@ namespace valid_framework {
         return index;
     }
 
+    struct TraceDumpConfig {
+        bool enabled{false};
+
+        bool dump_ops{true};
+        bool dump_full{true};
+
+        std::string filename_prefix{""};
+    };
 
 } // namespace valid_framework
