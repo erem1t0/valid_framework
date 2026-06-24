@@ -90,7 +90,9 @@ namespace valid_framework {
          * 
          * @return @c std::nullopt.
          */
-        static std::optional<Value> get(Container&, Key) { return std::nullopt; }
+        static std::optional<Value> get(Container&, Key) { 
+            return std::nullopt; 
+        }
 
         /**
          * @brief Default insert implementation.
@@ -101,7 +103,9 @@ namespace valid_framework {
          * 
          * @return @c std::nullopt.
          */
-        static std::optional<bool> insert(Container&, Key, Value) { return std::nullopt; }
+        static std::optional<bool> insert(Container&, Key, Value) { 
+            return std::nullopt; 
+        }
         
         /**
          * @brief Default erase implementation.
@@ -111,7 +115,9 @@ namespace valid_framework {
          * 
          * @return @c std::nullopt.
          */
-        static std::optional<bool> erase(Container&, Key) { return std::nullopt; }
+        static std::optional<bool> erase(Container&, Key) { 
+            return std::nullopt; 
+        }
         
         /**
          * @brief Default custom operation implementation.
@@ -125,7 +131,9 @@ namespace valid_framework {
          *
          * @return Boolean operation result containing @c std::nullopt.
          */
-        static OperationResult<Key, Value> custom(Container&, uint32_t, Key, Key, Value, std::size_t) { return BoolResult{std::nullopt}; }
+        static OperationResult<Key, Value> custom(Container&, uint32_t, Key, Key, Value, std::size_t) { 
+            return BoolResult{std::nullopt}; 
+        }
         
        /**
          * @brief Default get_memory implementation.
@@ -134,7 +142,9 @@ namespace valid_framework {
          *
          * @return zero.
          */
-        static std::size_t get_memory(Container&) { return 0; }
+        static std::size_t get_memory(Container&) { 
+            return 0; 
+        }
     };
 
 } // namespace valid_framework
