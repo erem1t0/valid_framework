@@ -1,3 +1,8 @@
+/**
+ * @file KeyGenerator.hpp
+ * @brief Key / Value generator interface and implementations.
+ */
+
 #pragma once
 
 #include <random>
@@ -7,15 +12,39 @@
 
 namespace valid_framework {
 
+    /**
+     * @brief Key/Value Generator interface class.
+     * 
+     * @tparam Key Operation key type to generate.
+     * @tparam Value Operation value type to generate.
+     */
     template<typename Key, typename Value>
     class AbstractKeyGenerator {
     public:
+    
+        /// @brief Resets the generator to a deterministic state derived from @p seed.
+        /// @param seed Seed (initial state) of generator to reset.
         virtual void reset(uint64_t seed) = 0;
+
+        /// @brief Generates the next key from the current generator state.
         virtual Key next_key() = 0;
+
+        /// @brief Generates the next value from the current generator state.
         virtual Value next_value() = 0;
+
         virtual ~AbstractKeyGenerator() = default;
     }; // class AbstractKeyGenerator
 
+    /**
+     * @brief Generates keys and values with uniform distributions.
+     * 
+     * This generator produces keys and values using uniform integer distributions.
+     * 
+     * @tparam Key Operation key type to generate.
+     * @tparam Value Operation value type to generate.
+     * 
+     * @note Key and Value must be integral types.
+     */
     template<typename Key, typename Value>
     class BaseKeyGenerator : public AbstractKeyGenerator<Key, Value> {
     public:
@@ -42,12 +71,27 @@ namespace valid_framework {
         }
 
     protected:
-
+        
+        /// Generator.
         std::mt19937_64 gen_;
+        /// Key distribution.
         std::uniform_int_distribution<Key>     key_distr_;
+        /// Value distribution.
         std::uniform_int_distribution<Value> value_distr_;
     };
 
+    /**
+     * @brief Generates keys with uniform distribution and constant values to match set-like containers.
+     * 
+     * This generator is intended for set-like containers where values are not relevant. 
+     * It always returns @c static_cast<Value>(1) from @c next_value().
+     * 
+     * @tparam Key type of key to generate.
+     * @tparam Value type of value to generate.
+     * 
+     * @note Wrappers for set-like containers should ignore inserted values and return
+     * @c static_cast<Value>(1) for successful lookup operations.
+     */
     template<typename Key, typename Value>
     class SetKeyGenerator : public BaseKeyGenerator<Key, Value> {
     public:
@@ -58,11 +102,22 @@ namespace valid_framework {
             return static_cast<Value>(1);
         }
 
-    }; // class BaseKeyGenerator
+    }; // class SetKeyGenerator
 
+    /**
+     * @brief Generates keys and values using the xoshiro256++ pseudo-random number generator.
+     * 
+     * This class is just an example of how other type of generators can be used.
+     * 
+     * @tparam Key type of key to generate.
+     * @tparam Value type of value to generate.
+     * 
+     * @note A zero seed is replaced with one before initialization, because the xoshiro256++ 
+     * generator requires a non-zero seed.
+     */
     template<typename Key, typename Value>
     class XoShiroKeyGenerator : public AbstractKeyGenerator<Key, Value> {
-        public:
+    public:
 
         explicit XoShiroKeyGenerator(uint64_t seed = std::random_device{}()) {
             if(seed == 0) {
@@ -88,7 +143,7 @@ namespace valid_framework {
             return static_cast<Value>(xoshiro256pp());
         }
 
-        private:
+    private:
         
         // ===== XOSHIRO IMPLEMENTATION =====
         static constexpr uint64_t rol64(uint64_t x, int k) {
