@@ -1,3 +1,11 @@
+/**
+ * @file valid_framework.hpp
+ * @brief Umbrella header for the valid_framework public API.
+ * 
+ * Include this header to access all core framework components:
+ * operations, wrappers, generators, scenarios, runners, tracing and logging. 
+ */
+
 #pragma once
 
 #include "ContainerWrapper.hpp"
@@ -9,11 +17,3 @@
 #include "Scenario.hpp"
 #include "OperationApplier.hpp"
 #include "Trace.hpp"
-
-/*
-    add_library(valid_framework INTERFACE)
-    target_include_directories(valid_framework INTERFACE D:/Progi/test_framework/include)
-
-    add_executable(my_app main.cpp)
-    target_link_libraries(my_app PRIVATE valid_framework)
-*/
