@@ -1,3 +1,8 @@
+/**
+ * @file Scenario.hpp
+ * @brief Defines the scenarios interface and implementations.
+ */
+
 #pragma once
 
 #include "OperationGenerator.hpp"
@@ -11,13 +16,32 @@
 
 namespace valid_framework {
 
+    /**
+     * @brief Configuration for a fixed-length scenario.
+     * 
+     * Stores the number of operations to generate and the operation generator
+     * used to produce them.
+     * 
+     * @tparam Key Operation key type.
+     * @tparam Value Operation value type.
+     * 
+     * @warning op_gen must be initialized before the configuration is used.
+     */
     template<typename Key, typename Value>
     struct ScenarioConfig {
 
-        std::size_t ops_count{0};
-        std::unique_ptr<AbstractOperationGenerator<Key, Value>> op_gen;
+        std::size_t ops_count{0}; ///< Number of operations produced before the scenario is exhausted.
+        std::unique_ptr<AbstractOperationGenerator<Key, Value>> op_gen; ///< Operation generator owned by the scenario configuration.
 
-        std::vector<std::pair<std::string, std::string>> meta() const {
+        /**
+         * @brief Returns scenario metadata for logging. 
+         * 
+         * @return Metadata key-value pairs containing the operation count and
+         * generator metadata.
+         * 
+         * @pre op_gen must not be null.
+         */
+         std::vector<std::pair<std::string, std::string>> meta() const {
             std::vector<std::pair<std::string, std::string>> res = {
                 { "ops_count", std::to_string(ops_count) },
             };
@@ -29,18 +53,58 @@ namespace valid_framework {
         }
     };
     
-    template<typename Key, typename Value>
+    /**
+     * @brief Alias for phases in PhasedScenario
+     * 
+     * @tparam Key Operation key type.
+     * @tparam Value Operation value type.
+     */
+     template<typename Key, typename Value>
     using PhaseConfig = ScenarioConfig<Key, Value>;
 
+    /**
+     * @brief Interface for deterministic operation sequences.
+     * 
+     * A scenario produces operations one by one and can be reset to a
+     * reproducible state using a seed.
+     * 
+     * @tparam Key Operation key type.
+     * @tparam Value Operation value type.
+     */ 
     template<typename Key, typename Value>
     class AbstractScenario {
     public:
-        virtual void reset(uint64_t seed) = 0;
-        virtual bool next(Operation<Key, Value>& op) = 0; // false if no more ops
-        virtual std::string to_string() const = 0; // For logger
+        
+        /**
+         * @brief Resets the scenario to a reproducible state.
+         * 
+         * @param[in] seed Seed used to initialize the underlying operation generator.
+         */
+        virtual void reset(uint64_t seed) = 0; 
+
+        /**
+         * @brief Produces the next operation.
+         * 
+         * @param[out] op Receives the generated operation.
+         * 
+         * @return true if an operation was produced, false if the scenario is exhausted.
+         */
+        virtual bool next(Operation<Key, Value>& op) = 0;
+
+        virtual std::string to_string() const = 0; ///< Metadata for logging.
+
         virtual ~AbstractScenario() = default;
     }; // ScenarioConfig
 
+    /**
+     * @brief Scenario that produces a fixed number of generated operations.
+     * 
+     * BaseScenario delegates operation generation to the configured operation
+     * generator and stops after @c ScenarioConfig::ops_count operations. 
+     * 
+     * @tparam Key Operation key type.
+     * @tparam Value Operation value type.
+     */
     template<typename Key, typename Value>
     class BaseScenario : public AbstractScenario<Key, Value> {
     public:
@@ -77,11 +141,24 @@ namespace valid_framework {
         }
 
     protected:
+
+        /// Configuration of scenario.
         ScenarioConfig<Key, Value> cfg_;
+        /// Count of generated operations.
         std::size_t generated_;
 
     }; // class BaseScenario
 
+    /**
+     * @brief Base class for scenarios split into consecutive phases.
+     * 
+     * Each phase produces a fixed number of operations. Derived classes define
+     * how phase configuration is stored, how generators are reset, and what
+     * happens when switching phases.
+     * 
+     * @tparam Key Operation key type.
+     * @tparam Value Operation value type.
+     */
     template<typename Key, typename Value>
     class PhasedScenarioBase : public AbstractScenario<Key, Value> {
     public:
@@ -128,15 +205,29 @@ namespace valid_framework {
     }; // PhasedScenarioBase
 
 
+    /**
+     * @brief Basic phased scenario class.
+     * 
+     * @tparam Key Operation key type.
+     * @tparam Value Operation value type.
+     */
     template<typename Key, typename Value>
     class PhasedScenario : public PhasedScenarioBase<Key, Value> {
     public:
 
+        /**
+         * @brief Constructs a phased scenario with one generator per phase.
+         *
+         * @param[in] phases Phase configurations in execution order.
+         *
+         * @throws std::invalid_argument if @p phases is empty or any phase has
+         * zero operations.
+         */
         PhasedScenario(std::vector<PhaseConfig<Key, Value>> phases)
             : phases_(std::move(phases))
         { 
             if(phases_.empty()) {
-                throw std::invalid_argument("PhasedScenario mush have at least one phase");
+                throw std::invalid_argument("PhasedScenario must have at least one phase");
             }
 
             for(const auto& phase : phases_) {
@@ -189,13 +280,20 @@ namespace valid_framework {
 
         std::vector<ScenarioConfig<Key, Value>> phases_;
 
-
     }; // class PhasedScenario
 
+    /**
+     * @brief Phase configuration for StatefulPhasedScenario.
+     * 
+     * Unlike PhasedScenario, StatefulPhasedScenario uses a single operation
+     * generator for all phases and reconfigures it when switching phases.
+     * 
+     */
     struct StatefulPhaseConfig {
-        std::size_t ops_count;
-        GeneratorConfig gen_cfg;
+        std::size_t ops_count;      ///< Number of operations in this phase.
+        GeneratorConfig gen_cfg;    ///< Generator configuration applied at phase start.
 
+        /// @brief Return metadata about StatefulPhase configuration.  
         std::vector<std::pair<std::string, std::string>> meta() const {
             std::vector<std::pair<std::string, std::string>> res = {
                 { "ops_count",      std::to_string(ops_count) },
@@ -211,54 +309,62 @@ namespace valid_framework {
         }
     };
 
-    // the same, but only 1 generator for each phase
+    /**
+     * @brief Phased scenario that reuses one stateful operation generator.
+     * 
+     * The same generator instance is used across all phases. On each phase switch,
+     * the generator is reconfigured with the corresponding phase configuration.
+     * 
+     * @tparam Key Operation key type.
+     * @tparam Value Operation value type.
+     */
     template<typename Key, typename Value>
     class StatefulPhasedScenario : public PhasedScenarioBase<Key, Value> {
     public:
 
         StatefulPhasedScenario(std::unique_ptr<AbstractOperationGenerator<Key, Value>> op_gen,
-                               std::vector<StatefulPhaseConfig>& phases)
+                               std::vector<StatefulPhaseConfig> phases)
             : op_gen_(std::move(op_gen))
             , phases_(phases)
         { }
 
 
-    std::string to_string() const override {
-            std::string res = "StatefulPhasedScenario:\n";
-            std::size_t curr_phase = 1;
+        std::string to_string() const override {
+                std::string res = "StatefulPhasedScenario:\n";
+                std::size_t curr_phase = 1;
 
-            for(const auto& phase : phases_) {
-                res += "\tPhase " + std::to_string(curr_phase++) + "(\n"; 
+                for(const auto& phase : phases_) {
+                    res += "\tPhase " + std::to_string(curr_phase++) + "(\n"; 
+                    
+                    auto meta = phase.meta();
+                    for(const auto& [name, data] : meta) {
+                        res += name + " = " + data + "\n";
+                    } 
+                    
+                    res += "\n";
+                }
                 
-                auto meta = phase.meta();
-                for(const auto& [name, data] : meta) {
-                    res += name + " = " + data + "\n";
-                } 
+                res += ")\n";
                 
-                res += "\n";
-            }
-            
-            res += ")\n";
-            
-            return res;
-    }
+                return res;
+        }
 
     protected:
 
-    void do_reset(uint64_t seed) override {
-        op_gen_->reset(seed);
-    }
+        void do_reset(uint64_t seed) override {
+            op_gen_->reset(seed);
+        }
 
-    std::size_t get_phase_count() const override { return phases_.size(); }
-    std::size_t get_ops_in_phase(std::size_t phase) const override { return phases_[phase].ops_count; }
+        std::size_t get_phase_count() const override { return phases_.size(); }
+        std::size_t get_ops_in_phase(std::size_t phase) const override { return phases_[phase].ops_count; }
 
-    Operation<Key, Value> generate_op() override {
-        return op_gen_->next();
-    }
+        Operation<Key, Value> generate_op() override {
+            return op_gen_->next();
+        }
 
-    void phase_switch(std::size_t new_phase) override {
-        op_gen_->reconfigure(phases_[new_phase].gen_cfg);
-    }
+        void phase_switch(std::size_t new_phase) override {
+            op_gen_->reconfigure(phases_[new_phase].gen_cfg);
+        }
 
     private:
 
