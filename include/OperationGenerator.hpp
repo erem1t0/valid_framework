@@ -15,33 +15,94 @@
 
 namespace valid_framework {
 
-    // How ofset we will get existing key
-    // 0.0 - random keys, 1.0 - only existing
-    struct HitFrequency {
-        double get{1.0};
-        double insert{0.0};
-        double erase{1.0};
-    }; // HitFrequency
+    /**
+     * @brief Hit probabilities for smart operation generation.
+     * 
+     * A hit means that the generator tries to use a key currently known as existing. 
+     * A miss means that the generator asks the key generator for a random key.
+     *
+     * Values are probabilities in the range [0.0, 1.0].
+     *
+     * @note A miss can still accidentally produce an existing key if the key
+     * generator returns a duplicate key.
+     */
+    struct HitRate {
+        double get{1.0};    ///< Hit probability for GetOp.
+        double insert{0.0}; ///< Hit probability for InsertOp.
+        double erase{1.0};  ///< Hit probability for EraseOp.
+    }; // HitRate
 
+    /**
+     * @brief Configuration shared by operation generators.
+     * 
+     * Contains operation generation weights and, optionally, hit probabilities used by smart generators.
+     */
     struct GeneratorConfig {
-        OpWeights weights{};
-        std::optional<HitFrequency> hits; // only for smart generators
+        OpWeights weights{};            ///< Operation generation weights.
+        std::optional<HitRate> hits;    ///< Hit probabilities for SmartOperationGenerator.
     };
 
+    /**
+     * @brief Operation generator interface.
+     * 
+     * @tparam Key Operation key type to generate.
+     * @tparam Value Operation value type to generate.
+     */
     template<typename Key, typename Value>
     class AbstractOperationGenerator {
     public:
+
+        /// @brief Resets the generator to a deterministic state derived from @p seed.
+        /// @param seed Seed (initial state) of generator to reset.
         virtual void reset(uint64_t seed) = 0;
+
+        /// @brief Generates the next operation from the current generator state.
         virtual Operation<Key, Value> next() = 0;
-        virtual void reconfigure(const GeneratorConfig&) { }
+
+        /**
+         *  @brief Updates generator configuration.
+         * 
+         * The default implementation does nothing. Stateful generators may override
+         * this method to support phase switching.
+         *
+         * @param[in] cfg New generator configuration.
+         */
+         virtual void reconfigure(const GeneratorConfig& cfg) { }
+
+        /**
+         * @brief Returns generator metadata for logging.
+         *
+         * @return Metadata key-value pairs describing the current generator configuration.
+         */
         virtual std::vector<std::pair<std::string, std::string>> meta() const = 0;
+
         virtual ~AbstractOperationGenerator() = default;
     }; // class AbstractOperationGenerator
 
-    // Very simple. Just gen OPs depends on weights
+    /**
+     * @brief Generates operations according to configured operation weights.
+     * 
+     * This generator does not track existing keys. Every operation argument is
+     * produced directly by the associated key/value generator. 
+     * 
+     * @tparam Key Operation key type to generate.
+     * @tparam Value Operation value type to generate.
+     * 
+     * @note @c GeneratorConfig::hits is ignored by this generator.
+     */
     template<typename Key, typename Value>
     class BaseOperationGenerator : public AbstractOperationGenerator<Key, Value> {
     public:
+
+        /**
+         * @brief Constructs a weighted operation generator.
+         *
+         * @param[in] cfg Generator configuration.
+         * @param[in,out] key_gen Key/value generator used to produce operation arguments.
+         * @param[in] seed Initial seed for operation type selection.
+         *
+         * @throws std::invalid_argument if operation weights do not sum to 100.
+         */
         explicit BaseOperationGenerator(GeneratorConfig cfg, 
                                         AbstractKeyGenerator<Key, Value>& key_gen,
                                         uint64_t seed = std::random_device{}())
@@ -84,6 +145,12 @@ namespace valid_framework {
 
     private:
 
+        /**
+         * @brief Build discrete distribution before using it.
+         * 
+         * @throws std::invalid_argument if sum of the operation weights is not 100.
+         * @todo Change operation weights from int to double
+         */
         void build() {
             constexpr double EPS = 1e-9;
             
@@ -109,18 +176,41 @@ namespace valid_framework {
             op_distr_ = std::discrete_distribution<int>(w_arr.begin(), w_arr.end());
         }
 
+        /// @brief Generates random positional value. 
         std::size_t random_size_val() {
             std::uniform_int_distribution<std::size_t> dice(0, std::numeric_limits<std::size_t>::max());
             return dice(gen_);
         }
         
+        /// Generator
         std::mt19937_64 gen_;
+
+        /// Keys and values generator.
         AbstractKeyGenerator<Key,Value>& key_gen_;
+        
+        /// Operation generation weights.
         OpWeights weights_;
 
+        /// Discrete distribution used to select operation types according to weights.
         std::discrete_distribution<int> op_distr_;
     }; // class BaseOperationGenerator
 
+    /**
+     * @brief Generates operations using weights and hit probabilities.
+     *
+     * SmartOperationGenerator tracks keys inserted during generation and can
+     * bias get, insert, erase, and custom operations toward existing keys.
+     *
+     * Operation types are selected according to configured operation weights.
+     * Hit decisions are made using a uniform real distribution and the configured
+     * hit probabilities.
+     *
+     * @note The generator tracks keys according to generated operations, not according
+     * to actual container results.
+     * 
+     * @tparam Key Operation key type.
+     * @tparam Value Operation value type.
+     */
     template<typename Key, typename Value>
     class SmartOperationGenerator : public AbstractOperationGenerator<Key, Value> {
     public:
@@ -134,7 +224,7 @@ namespace valid_framework {
             , weights_(cfg.weights)
             , hit_distr_(0.0, 1.0)
         {
-            hits_ = (cfg.hits.has_value() ? *cfg.hits : HitFrequency{});
+            hits_ = (cfg.hits.has_value() ? *cfg.hits : HitRate{});
             build();
         }
 
@@ -176,9 +266,9 @@ namespace valid_framework {
                     std::size_t custom_index = op_index - 3;
                     const auto& profile = weights_.custom[custom_index];
 
-                    bool is_hit1 = should_hit(profile.frequency);
-                    bool is_hit2 = should_hit(profile.frequency);
-                    bool is_hit3 = should_hit(profile.frequency);
+                    bool is_hit1 = should_hit(profile.hit_rate);
+                    bool is_hit2 = should_hit(profile.hit_rate);
+                    bool is_hit3 = should_hit(profile.hit_rate);
 
                     Key key1 = gen_key_smart(is_hit1);
                     Key key2 = gen_key_smart(is_hit2);
@@ -205,6 +295,11 @@ namespace valid_framework {
             build();
         }
 
+        /**
+         * @brief Returns operation weights and hit probabilities as metadata.
+         *
+         * @return Metadata key-value pairs used by loggers and trace headers.
+         */
         std::vector<std::pair<std::string, std::string>> meta() const override {
             auto res = weights_meta(weights_);
 
@@ -217,6 +312,11 @@ namespace valid_framework {
 
     private:
 
+        /**
+         * @brief Build discrete distribution before using it.
+         * 
+         * @throws std::invalid_argument if sum of the operation weights is not 100.
+         */
         void build() {
             constexpr double EPS = 1e-9;
             
@@ -241,37 +341,62 @@ namespace valid_framework {
             op_distr_ = std::discrete_distribution<int>(w_arr.begin(), w_arr.end());
         }
 
+        /**
+         * @brief Decides whether the next argument should use an existing key.
+         * 
+         * @param probability Hit probability in the range [0.0, 1.0].
+         */
         bool should_hit(double frequency) {
             return (existing_keys_.empty() ? false : (hit_distr_(gen_) < frequency));
         }
 
-        std::size_t random_index(std::size_t size) {
+        /**
+         * @brief Pick random index from existing keys.
+         * 
+         * @param size Current size of all keys.
+         */
+         std::size_t random_index(std::size_t size) {
             std::uniform_int_distribution<std::size_t> dice(0, size - 1);
             return dice(gen_);
         }
 
+        /// @brief Generates random positional value. 
         std::size_t random_size_val() {
             std::uniform_int_distribution<std::size_t> dice(0, std::numeric_limits<std::size_t>::max());
             return dice(gen_);
         }
 
+        /// @brief Selects a key from the tracked existing-key set.
         Key pick_existing() {
             return existing_keys_.empty() ? key_gen_.next_key() : existing_keys_[random_index(existing_keys_.size())];
         }
 
-        Key gen_key_smart(bool is_hit) {
+        /**
+         * @brief Practical method to pick existing/random key.
+         * 
+         * @param is_hit If true, select a tracked existing key; otherwise generate a random key.
+         */
+         Key gen_key_smart(bool is_hit) {
             return (is_hit ? pick_existing() : key_gen_.next_key());
         }
 
+        /// Generator.
         std::mt19937_64 gen_;
+        /// Key/Value generator.
         AbstractKeyGenerator<Key,Value>& key_gen_;
         
+        /// Operation frequencies.
         OpWeights weights_;
-        HitFrequency hits_;
+        /// Operation HitFrequency-es.
+        HitRate hits_;
         
+        /// Keys tracked as existing by the generator model.
         std::vector<Key> existing_keys_;
 
+        /// Discrete distribution to pick operations due to operation frequencies.
         std::discrete_distribution<int> op_distr_;
+
+        /// Uniform distribution to pick keys due to hit frequencies.
         std::uniform_real_distribution<double> hit_distr_;
     }; // SmartOperationGenerator
 
