@@ -20,12 +20,23 @@
 
 namespace valid_framework {
 
+    /// @brief Enumeration of runner modes.
     enum class RunnerMode {
-        Validate,
-        Benchmark, 
-        Combined,
+        Validate,   ///< Runs operations one by one and compares results immediately.
+        Benchmark,  ///< Runs operations in chunks and records timing and memory only.
+        
+        /**
+         * @brief Runs operations in chunks, measures performance, and hashes results.
+         *
+         * This mode helps prevent dead-code elimination in benchmark runs and provides
+         * a fast aggregate correctness check. It can detect that results differ, but
+         * cannot identify the exact operation where the mismatch occurred.
+         */
+        Combined,  
     };
 
+    /// @brief Converts runner mode to string (const char*).
+    /// @param mode Target runner mode.
     inline const char* mode_to_string(RunnerMode mode) {
         switch(mode) {
             case RunnerMode::Validate:      return "Validate";
@@ -35,27 +46,39 @@ namespace valid_framework {
         }
     }
 
+    /**
+     * @brief Configuration for the Runner class.
+     * @tparam Key Operation key type.
+     * @tparam Value Operation value type.
+     */
     template<typename Key, typename Value>
     struct RunnerConfig {
-        uint64_t seed{};
-        bool stop_on_error{true};
-        RunnerMode mode{RunnerMode::Validate};
-        std::size_t chunk_size{1000000};
-        std::size_t chunk_count{1024}; // for reserve if know
+        uint64_t seed{}; ///< Seed used to reset the scenario for reproducible runs.
+        bool stop_on_error{true}; ///< Stop validation after the first mismatch.
+        RunnerMode mode{RunnerMode::Validate}; ///< Mode of the runner.
+        std::size_t chunk_size{1000000}; ///< Size of chunks for Benchmark and Combined modes.
+        std::size_t chunk_count{1024};   ///< Expected number of chunks used to reserve logger storage.
 
-        std::string valid_name{"valid"};
-        std::string test_name{"test"};
+        std::string valid_name{"valid"}; ///< Display name of the validating container.
+        std::string test_name{"test"};   ///< Display name of the testing container.
 
-        TraceDumpConfig trace_cfg;
+        TraceDumpConfig trace_cfg;  ///< Configuration for tracing operations into a file if necessary.
     };
 
-    template<typename Key, typename Value>
+    /**
+     * @brief Summary returned by a runner after execution.
+     *
+     * @tparam Key Container key type. 
+     * @tparam Value Container value type.
+     */
+     template<typename Key, typename Value>
     struct RunnerReport {
-        std::size_t completed_ops{0};
-        std::size_t failed_ops{0};
-        std::string message{};
+        std::size_t completed_ops{0}; ///< Number of detected failures; in Combined mode this is 0 or 1.
+        std::size_t failed_ops{0};    ///< Total count of failed operations during launch (for Benchmark always 0, for Combined 0 or 1).
+        std::string message{};        ///< Message with information about error if it occurred.
     };
 
+    /// @brief Struct for storing hashes.
     struct Hash128 {
         uint64_t h1;
         uint64_t h2;
@@ -65,7 +88,12 @@ namespace valid_framework {
         }
     };
 
-    // pair of (FNV-1a, Poly) hashing
+    /**
+     * @brief Incrementally hashes operation results into a 128-bit aggregate hash.
+     *
+     * The hash combines FNV-1a and polynomial hashing and is used by combined
+     * benchmark/validation modes.
+     */
     class Hasher {
     public:
 
@@ -73,10 +101,19 @@ namespace valid_framework {
             reset();
         }
 
+        /// @brief Returns the current aggregate hash.
         Hash128 get_hash()  const {
             return Hash128{ state1_, state2_ };
         }
 
+        /**
+         * @brief Incorporates an operation result into the aggregate hash.
+         * 
+         * @tparam Key Operation result key type.
+         * @tparam Value Operation result value type.
+         * 
+         * @param op_res Target operation result for updating hash.
+         */
         template<typename Key, typename Value>
         void update(const OperationResult<Key, Value>& op_res) {
 
@@ -90,6 +127,7 @@ namespace valid_framework {
             }, op_res);
         }
 
+        /// @brief Reset hash values to start state.
         void reset() {
             state1_ = 0;
             state2_ = FNV_offset_basis_;
@@ -146,6 +184,20 @@ namespace valid_framework {
     
     };
 
+
+    /**
+     * @brief Runs a scenario against test and reference containers.
+     * 
+     * Runner can validate operation results, benchmark both containers, or run
+     * an aggregate hash check depending on RunnerConfig::mode.
+     * 
+     * @tparam TestWrapper Adapter type for the testing container.
+     * @tparam TestContainer Testing container type.
+     * @tparam ValidWrapper Adapter type for the validating container.
+     * @tparam ValidContainer Validating container type.
+     * @tparam Key Operation key type.
+     * @tparam Value Operation value type.
+     */
     template<typename TestWrapper,  typename TestContainer, 
              typename ValidWrapper, typename ValidContainer, 
              typename Key, typename Value>
@@ -154,12 +206,25 @@ namespace valid_framework {
     class Runner {
     public:
 
+        /**
+         * @brief Constructs a runner for comparing or benchmarking two containers.
+         *
+         * @param[in,out] scenario Scenario that produces operations for the run.
+         * @param[in] test_logger_filename Output log file for the tested container.
+         * @param[in] valid_logger_filename Output log file for the reference container.
+         * @param[in] cfg Runner configuration.
+         * @param[in] test_build Factory function used to create the tested container.
+         * @param[in] valid_build Factory function used to create the reference container.
+         *
+         * @throws std::invalid_argument if chunk_size is zero or trace configuration is invalid.
+         */
         Runner(AbstractScenario<Key, Value>& scenario, 
-            const std::string& test_logger_filename,
-            const std::string& valid_logger_filename,
-            const RunnerConfig<Key, Value>& cfg,
-            std::function<TestContainer()> test_build   = [](){ return TestContainer{}; },
-            std::function<ValidContainer()> valid_build = [](){ return ValidContainer{}; })
+               const std::string& test_logger_filename,
+               const std::string& valid_logger_filename,
+               const RunnerConfig<Key, Value>& cfg,
+               std::function<TestContainer()> test_build   = [](){ return TestContainer{}; },
+               std::function<ValidContainer()> valid_build = [](){ return ValidContainer{}; }
+            )
             : scenario_(scenario)
             , test_logger_(test_logger_filename)
             , valid_logger_(valid_logger_filename)
@@ -177,10 +242,20 @@ namespace valid_framework {
 
             if(cfg_.trace_cfg.enabled && !(cfg_.trace_cfg.dump_full || cfg_.trace_cfg.dump_ops)) {
                 throw std::invalid_argument(
-                    "trace enabled but politics are off. Turn at least 1 of them (ops, full) or disable trace");
+                    "trace is enabled but both trace outputs are disabled; enable dump_ops or dump_full, or disable tracing");
             }
         }
 
+        /**
+         * @brief Executes the configured runner mode.
+         *
+         * Initializes metadata, runs the scenario according to RunnerConfig::mode,
+         * writes logs, and returns the execution report.
+         *
+         * @return Summary of the completed run.
+         *
+         * @throws std::runtime_error if the configured runner mode is unknown.
+         */
         RunnerReport<Key, Value> run() {
             
             start_meta(test_logger_, "test", cfg_.test_name.c_str());
@@ -204,6 +279,13 @@ namespace valid_framework {
 
     private:
 
+        /**
+         * @brief Add general metadata about launching.
+         * 
+         * @param logger Target logger object.
+         * @param type Key of metadata.
+         * @param container_name Name of the container for logging.
+         */
         void start_meta(Logger& logger, const char* type, const char* container_name) {
             logger.add_meta("type", type);
             logger.add_meta("container_name", container_name);
@@ -212,7 +294,7 @@ namespace valid_framework {
             logger.add_meta("scenario", scenario_.to_string());
         }
 
-        // Only for finding errors, no timings
+        /// @brief Launch scenario with validate runner mode with no measurements.
         RunnerReport<Key, Value> run_validate() {
             RunnerReport<Key, Value> report{};
 
@@ -342,7 +424,7 @@ namespace valid_framework {
             return report;
         }
 
-        // Only timings
+        /// @brief Launch scenario with benchmark runner mode only with measurements.
         RunnerReport<Key, Value> run_benchmark() {
             RunnerReport<Key, Value> report{};
             Operation<Key, Value> op;
@@ -413,7 +495,7 @@ namespace valid_framework {
             return report;
         }
 
-        // Timings + error (but dont know where it is)
+        /// @brief Launch scenario with combined runner mode with measurements and total hash mismatch checking.
         RunnerReport<Key, Value> run_combined() {
             RunnerReport<Key, Value> report{};
             Operation<Key, Value> op;
@@ -506,6 +588,7 @@ namespace valid_framework {
             return report;
         }
 
+        /// @brief Finalizes both loggers and writes their output files.
         void finish_and_write() {
             test_logger_.finish();
             valid_logger_.finish();
@@ -513,50 +596,79 @@ namespace valid_framework {
             valid_logger_.write();
         }
 
+        /// @brief Method to collect name of trace file.
+        /// @param op_index Index of operation where occured mismatch.
+        /// @param type Type of tracing (full / ops only).
         std::string make_trace_filename(std::size_t op_index, const char* type) const {
             return cfg_.trace_cfg.filename_prefix + "_seed_" + std::to_string(cfg_.seed) 
                     + "_op_" + std::to_string(op_index) + "_" + type + ".log";
         }
 
+        /// @brief Method to collect name of temporary trace file while running.
+        /// @param type Type of tracing (full / ops only).
         std::string make_tmp_trace_filename(const char* type) const {
             return cfg_.trace_cfg.filename_prefix + "_seed_" + std::to_string(cfg_.seed) 
                      + "_" + type + "_tmp.log";
         }
 
+        /// Main scenario for launch.
         AbstractScenario<Key, Value>& scenario_;
+        /// Configuration of runner.
         RunnerConfig<Key, Value> cfg_;
+        /// Logger for testing container.
         Logger test_logger_;
+        /// Logger for validating container.
         Logger valid_logger_;
+        /// Fabric for building testing container.
         std::function<TestContainer()>  test_build_;
+        /// Fabric for building validating container.
         std::function<ValidContainer()> valid_build_;
 
     }; // Runner
 
+
+    /// @brief Enumeration of single runner modes.
     enum  class SingleRunnerMode {
-        Plain,
-        Benchmark,
-        Benchmark_hashed,
+        Plain,      ///< Run one by one operations.
+        Benchmark,  ///< Run scenario by chunks with measurements.
+        BenchmarkHashed,   ///< Same as benchmark + hashing results to avoid compiler optimizations.
     }; // SingleRunnerMode
         
+    /// @brief Converts single runner mode to string (const char*).
+    /// @param mode Target single runner mode.
     inline const char* mode_to_string(SingleRunnerMode mode) {
         switch(mode) {
             case SingleRunnerMode::Plain:               return "Plain";
             case SingleRunnerMode::Benchmark:           return "Benchmark";
-            case SingleRunnerMode::Benchmark_hashed:    return "Benchmark_hashed";
+            case SingleRunnerMode::BenchmarkHashed:     return "BenchmarkHashed";
             default:                                    return "Unknown";
         }
     }
 
+    /// @brief Configuration for the SingleRunner class.
+    /// @tparam Key Operation key type.
+    /// @tparam Value Operation value type.
     template<typename Key, typename Value>
     struct SingleRunnerConfig {
-        uint64_t seed{};
-        SingleRunnerMode mode{SingleRunnerMode::Plain};
-        std::size_t chunk_size{1000000};
-        std::size_t chunk_count{1024}; // for reserve if know
+        uint64_t seed{};   ///< Seed for scenario generator to make reproduction.
+        SingleRunnerMode mode{SingleRunnerMode::Plain}; ///< Mode of the single runner.
+        std::size_t chunk_size{1000000};    ///< Chunk size used by Benchmark and BenchmarkHashed modes.
+        std::size_t chunk_count{1024};      ///< Reserve for logger records (optionally).
         
-        std::string name{"container"};
+        std::string name{"container"};  ///< Name of running container.
     }; // SingleRunnerConfig
 
+    /**
+     * @brief Runs a scenario against a single container.
+     * 
+     * SingleRunner is intended for standalone execution and benchmarking without
+     * comparing results against a reference container.
+     * 
+     * @tparam Wrapper Adapter type for the running container.
+     * @tparam Container Container type used by the run.
+     * @tparam Key Operation key type.
+     * @tparam Value Operation value type.
+     */
     template<typename Wrapper, typename Container, typename Key, typename Value>
     requires ContainerWrapper<Wrapper, Container, Key, Value>
     class SingleRunner {
@@ -576,6 +688,11 @@ namespace valid_framework {
             } 
         }
 
+        /**
+         * @brief Standart method to run scenario.
+         * 
+         * Starts logging and launch the mode that is specified in SingleRunnerConfig.
+         */
         RunnerReport<Key, Value> run() { 
             start_meta("container", cfg_.name.c_str());
 
@@ -586,7 +703,7 @@ namespace valid_framework {
                 case SingleRunnerMode::Benchmark: {
                     return run_benchmark();
                 }
-                case SingleRunnerMode::Benchmark_hashed: {
+                case SingleRunnerMode::BenchmarkHashed: {
                     return run_benchmark_hashed();
                 }
                 default: {
@@ -597,6 +714,7 @@ namespace valid_framework {
 
     private:
 
+        /// @brief Runs operations one by one without timing chunks.
         RunnerReport<Key, Value> run_plain() {
             RunnerReport<Key, Value> report{};
             Operation<Key, Value> op;
@@ -616,6 +734,7 @@ namespace valid_framework {
             return report;
         }
 
+        /// @brief Run operations by chunks with measurements. 
         RunnerReport<Key, Value> run_benchmark() {
             RunnerReport<Key, Value> report{};
             Operation<Key, Value> op;
@@ -654,6 +773,7 @@ namespace valid_framework {
             return report;
         }
 
+        /// @brief Runs operations in chunks, records measurements, and hashes operation results.
         RunnerReport<Key, Value> run_benchmark_hashed() {
             RunnerReport<Key, Value> report{};
             Operation<Key, Value> op;
@@ -704,6 +824,12 @@ namespace valid_framework {
             return report;
         }
 
+        /** 
+         * @brief Add general metadata about launching.
+         * 
+         * @param type Key of metadata.
+         * @param container_name Name of the container for logging.
+         */
         void start_meta(const char* type, const char* container_name) {
             logger_.add_meta("type", type);
             logger_.add_meta("container_name", container_name);
@@ -712,9 +838,13 @@ namespace valid_framework {
             logger_.add_meta("scenario", scenario_.to_string());
         }
 
+        /// Configuration of SingleRunner.
         SingleRunnerConfig<Key, Value> cfg_;
+        /// Scenario for launch.
         AbstractScenario<Key, Value>& scenario_;
+        /// Logger for running container.
         Logger logger_;
+        /// Fabric for building running container.
         std::function<Container()> build_;
     }; // class SingleRunner
 
