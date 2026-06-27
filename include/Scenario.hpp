@@ -326,7 +326,21 @@ namespace valid_framework {
                                std::vector<StatefulPhaseConfig> phases)
             : op_gen_(std::move(op_gen))
             , phases_(phases)
-        { }
+        { 
+            if(!op_gen_) {
+                throw std::invalid_argument("StatefulPhasedScenario op_gen must not be null");  
+            }
+
+            if(phases_.empty()) {
+                throw std::invalid_argument("StatefulPhasedScenario must have at least one phase");
+            }
+
+            for(const auto& phase : phases_) {
+                if(phase.ops_count == 0) {
+                    throw std::invalid_argument("Each phase must have ops_count > 0");
+                }
+            }
+        }
 
 
         std::string to_string() const override {
