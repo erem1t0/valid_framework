@@ -73,8 +73,8 @@ namespace valid_framework {
      */
      template<typename Key, typename Value>
     struct RunnerReport {
-        std::size_t completed_ops{0}; ///< Number of detected failures; in Combined mode this is 0 or 1.
-        std::size_t failed_ops{0};    ///< Total count of failed operations during launch (for Benchmark always 0, for Combined 0 or 1).
+        std::size_t completed_ops{0}; ///< Number of operations completed by the runner.
+        std::size_t failed_ops{0};    ///< Number of detected failures; in Combined mode this is 0 or 1.
         std::string message{};        ///< Message with information about error if it occurred.
     };
 
@@ -327,11 +327,11 @@ namespace valid_framework {
             }
 
             if(trace_full_enabled) {
-                full_tmp_filename = make_tmp_trace_filename("ops");
+                full_tmp_filename = make_tmp_trace_filename("full");
                 full_fout.open(full_tmp_filename);
                 
                 if(!full_fout.is_open()) {
-                    throw std::runtime_error("Cannot open ops trace file: " + full_tmp_filename);
+                    throw std::runtime_error("Cannot open full trace file: " + full_tmp_filename);
                 }
 
                 write_header<Key, Value>(full_fout, cfg_.seed, 0, scenario_);
@@ -350,7 +350,7 @@ namespace valid_framework {
                 TraceOp<Key, Value> trace_op = to_trace_op<Key, Value>(report.completed_ops, op);
 
                 if(trace_ops_enabled) {
-                    write_trace_op<Key, Value>(ops_fout, trace_op);
+                    write_op<Key, Value>(ops_fout, report.completed_ops, op);
                 }
 
                 if(trace_full_enabled) {
