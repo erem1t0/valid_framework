@@ -180,8 +180,6 @@ namespace valid_framework {
                 break;
             }
         }
-
-        out << '\n';
     }
 
     /**
@@ -197,6 +195,7 @@ namespace valid_framework {
      template<typename Key, typename Value>
     void write_op(std::ostream& out, std::size_t index, const Operation<Key, Value>& op) {
         write_trace_op<Key, Value>(out, to_trace_op(index, op));
+        out << '\n';
     }
 
     namespace detail {
@@ -244,7 +243,7 @@ namespace valid_framework {
         out << "\n";
 
         out << "# scenario:\n";
-        write_text(out, scenario.to_string());
+        detail::write_text(out, scenario.to_string());
         out << "\n";
     }
 
@@ -609,7 +608,7 @@ namespace valid_framework {
             } else {
                 static_assert(sizeof(T) == 0, "Unknown OperatrionResult type");
             }
-        });
+        }, res);
     }
 
     /**
@@ -623,8 +622,7 @@ namespace valid_framework {
      */
     template<typename Key, typename Value>
     void write_trace_record(std::ostream& out, const TraceRecord<Key, Value>& rec) {
-        write_trace_op_newline<Key, Value>(out, rec.op);
-        out << '\n';
+        write_trace_op<Key, Value>(out, rec.op);
 
         if(rec.expected.has_value()) {
             out << " => ";
