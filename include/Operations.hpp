@@ -19,7 +19,7 @@ namespace valid_framework {
     struct CustomOpProfile {
         uint32_t id;            ///< Custom operation identifier of this custom operation.
         uint32_t weight{0};     ///< Generation weight of this custom operation.
-        double hit_rate{0.0};  ///< Probability of selectiong existing keys for this custom operation.
+        double hit_rate{0.0};  ///< Probability of selection existing keys for this custom operation.
     };
 
     /// @brief Weights of operations for generation.
@@ -30,7 +30,7 @@ namespace valid_framework {
         std::vector<CustomOpProfile> custom{};  ///< Custom operation generation profiles.
     };
 
-    /// @brief Converts operationg weight to logger metadata.
+    /// @brief Converts operation weight to logger metadata.
     /// @param weights Target OpWeights object.
     /// @return Metadata key-value pairs describing operation weights.
     inline std::vector<std::pair<std::string, std::string>> weights_meta(const OpWeights& weights) {
@@ -53,7 +53,7 @@ namespace valid_framework {
     template<typename Key, typename Value>
     struct InsertOp { Key key; Value value; };
 
-    /// @brief Represents an lookup operation by key.
+    /// @brief Represents a lookup operation by key.
     /// @tparam Key Operation key type.
     template<typename Key>
     struct GetOp { Key key; };
@@ -68,11 +68,11 @@ namespace valid_framework {
     /// @tparam Value Operation value type.
     template<typename Key, typename Value>
     struct CustomOp {
-        uint32_t id;    ///< index of custom operation.
-        Key key1;       ///< first key of custom operation.
-        Key key2;       ///< second key of custom operation (for range-based operations).
-        Value value;    ///< value of custom operation.
-        std::size_t size_val;   ///< position value of custom operation.
+        uint32_t id;    ///< Identifier of custom operation.
+        Key key1;       ///< First key of custom operation.
+        Key key2;       ///< Second key of custom operation (for range-based operations).
+        Value value;    ///< Value of custom operation.
+        std::size_t size_val;   ///< Position value of custom operation.
     };
 
     /// @brief Operation type alias.
