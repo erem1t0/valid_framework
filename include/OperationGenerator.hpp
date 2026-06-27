@@ -2,7 +2,7 @@
 
 #include "KeyGenerator.hpp"
 #include "Operations.hpp"
-#include <cstdint>
+#include <cstddef>
 #include <random>
 #include <array>
 #include <stdexcept>
@@ -106,11 +106,11 @@ namespace valid_framework {
         explicit BaseOperationGenerator(GeneratorConfig cfg, 
                                         AbstractKeyGenerator<Key, Value>& key_gen,
                                         uint64_t seed = std::random_device{}())
-            : gen_(seed) 
             , key_gen_(key_gen)
             , weights_(cfg.weights)
         { 
             build();
+            reset(seed);
         }
 
         void reset(uint64_t seed) override {
