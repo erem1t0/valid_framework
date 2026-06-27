@@ -106,7 +106,7 @@ namespace valid_framework {
         explicit BaseOperationGenerator(GeneratorConfig cfg, 
                                         AbstractKeyGenerator<Key, Value>& key_gen,
                                         uint64_t seed = std::random_device{}())
-            , key_gen_(key_gen)
+            : key_gen_(key_gen)
             , weights_(cfg.weights)
         { 
             build();
