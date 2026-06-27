@@ -6,7 +6,7 @@
 #pragma once
 
 #include <random>
-#include <cstdint>
+#include <cstddef>
 #include <limits>
 #include <type_traits>
 
@@ -129,6 +129,10 @@ namespace valid_framework {
 
         void reset(uint64_t seed) override {
             uint64_t x = seed;
+            if(x == 0)  {
+                x = 1; // for safety
+            }
+            
             for(std::size_t i = 0; i < 4; ++i) {
                 state_.s[i] = splitmix64(x);
             }
