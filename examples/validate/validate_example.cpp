@@ -95,7 +95,6 @@ valid_framework::RunnerReport<Key, Value> validate_scenario(
 }
 
 
-
 int main() {
     using Key = int;
     using Value = int;
