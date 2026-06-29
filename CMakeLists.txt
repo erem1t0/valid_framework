@@ -7,6 +7,7 @@ project(valid_framework
 
 option(VALID_FRAMEWORK_BUILD_EXAMPLES "Build valid_framework examples" OFF)
 option(VALID_FRAMEWORK_BUILD_DOCS "Build valid_framework documentation" OFF)
+option(VALID_FRAMEWORK_BUILD_TESTS "Build valid_framework tests" OFF)
 
 add_library(valid_framework INTERFACE)
 
@@ -22,4 +23,9 @@ add_library(valid_framework::valid_framework ALIAS valid_framework)
 
 if(VALID_FRAMEWORK_BUILD_EXAMPLES)
     add_subdirectory(examples)
+endif()
+
+if(VALID_FRAMEWORK_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
 endif()
